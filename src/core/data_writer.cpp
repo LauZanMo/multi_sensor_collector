@@ -11,8 +11,7 @@ DataWriter::DataWriter(const YAML::Node &config) {
 }
 
 void DataWriter::init() {
-    file_ = std::make_shared<H5Easy::File>(file_name_,
-                                           H5Easy::File::ReadWrite | H5Easy::File::Create | H5Easy::File::Truncate);
+    file_ = std::make_shared<H5Easy::File>(file_name_, H5Easy::File::ReadWrite | H5Easy::File::Create);
 
     auto sensors = synchronizer_->sensors();
     for (auto &sensor_pair : sensors) {
