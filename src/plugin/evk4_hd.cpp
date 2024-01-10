@@ -4,6 +4,7 @@
 #include <core/synchronizer.h>
 #include <metavision/hal/facilities/i_erc.h>
 #include <metavision/hal/facilities/i_trigger_in.h>
+#include <opencv4/opencv2/highgui/highgui.hpp>
 #include <tbb/parallel_for.h>
 #include <thread>
 
@@ -23,6 +24,7 @@ Evk4Hd::Evk4Hd(const YAML::Node &config, const YAML::Node &sensor_config)
     sync_threshold_   = 0.1 / sync_rate;
     pub_process_cost_ = sensor_config["pub_process_cost"].as<bool>();
     max_size_         = rate_ * record_interval_;
+    acc_size_         = sensor_config["acc_size"].as<uint32_t>();
 }
 
 Evk4Hd::~Evk4Hd() {
@@ -52,8 +54,20 @@ void Evk4Hd::init() {
     // 打印相机信息
     auto &config   = camera_.get_camera_configuration();
     auto &geometry = camera_.geometry();
-    LOGI << label_ << ": Camera geometry " << geometry.width() << "x" << geometry.height();
+    auto width = geometry.width(), height = geometry.height();
+    LOGI << label_ << ": Camera geometry " << width << "x" << height;
     LOGI << label_ << ": Camera serial number: " << config.serial_number;
+
+    // 加入UI
+    // TODO: 加入可视化控制
+    auto fps   = 50.0;
+    frame_gen_ = std::make_shared<Metavision::PeriodicFrameGenerationAlgorithm>(width, height, acc_size_, fps);
+    cv::namedWindow(label_, cv::WINDOW_NORMAL);
+    cv::resizeWindow(label_, width, height);
+    frame_gen_->set_output_callback([this](Metavision::timestamp, cv::Mat &frame) {
+        cv::imshow(label_, frame);
+        cv::waitKey(1);
+    });
 }
 
 void Evk4Hd::process() {
@@ -61,6 +75,10 @@ void Evk4Hd::process() {
 
     camera_.cd().add_callback(
         [this](const Metavision::EventCD *begin, const Metavision::EventCD *end) { processCD(begin, end); });
+
+    camera_.cd().add_callback([&](const Metavision::EventCD *begin, const Metavision::EventCD *end) {
+        frame_gen_->process_events(begin, end);
+    });
 
     camera_.ext_trigger().add_callback(
         [this](const Metavision::EventExtTrigger *begin, const Metavision::EventExtTrigger *end) {

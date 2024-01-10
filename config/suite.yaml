@@ -22,6 +22,7 @@ sensors:
         record_rate: 100.0
         sync_rate: 10.0
         pub_process_cost: true
+        acc_size: 20000
 
 data_writer:
     file_name: "/home/ubuntu/dataset/whu/20240109/test.h5"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <metavision/sdk/core/algorithms/periodic_frame_generation_algorithm.h>
 #include <metavision/sdk/driver/camera.h>
 #include <tbb/concurrent_queue.h>
 #include <yaml-cpp/yaml.h>
@@ -27,6 +28,7 @@ private:
     void processExtTrigger(const Metavision::EventExtTrigger *begin, const Metavision::EventExtTrigger *end);
 
     Metavision::Camera camera_;
+    std::shared_ptr<Metavision::PeriodicFrameGenerationAlgorithm> frame_gen_;
 
     // 容器
     tbb::concurrent_queue<StampBundle> sensor_stamp_queue_, ext_stamp_queue_;
@@ -42,6 +44,7 @@ private:
     double sync_threshold_;
     bool pub_process_cost_;
     long max_size_;
+    uint32_t acc_size_;
 };
 
 } // namespace MSC

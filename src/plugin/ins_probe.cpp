@@ -81,8 +81,8 @@ void InsProbe::process() {
 
                     // 可视化
                     if (visualize_) {
-                        LOGI << label_ << ": IMU data Inc: " << data_inc.transpose().format(Logger::mat_fmt);
-                        LOGI << label_ << ": IMU data Abs: " << data_abs.transpose().format(Logger::mat_fmt);
+                        // LOGI << label_ << ": IMU data Inc: " << data_inc.transpose().format(Logger::mat_fmt);
+                        // LOGI << label_ << ": IMU data Abs: " << data_abs.transpose().format(Logger::mat_fmt);
                     }
 
                     if (!is_imu_published) {

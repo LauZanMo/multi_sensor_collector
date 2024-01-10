@@ -39,6 +39,7 @@ Synchronizer::~Synchronizer() {
     for (auto &sensor_pair : sensors_) {
         auto &sensor = sensor_pair.second;
         sensor->recordStop();
+        sensor->visualizeStop();
     }
 
     if (is_running_)
@@ -63,7 +64,9 @@ void Synchronizer::init() {
         sensor->init();
         LOGI << label_ << ": Sensor " << label << " initialized.";
 
+        // TODO: 加入UI控制，暂时默认开启
         sensor->recordStart();
+        sensor->visualizeStart();
     }
 
     data_writer_->init();

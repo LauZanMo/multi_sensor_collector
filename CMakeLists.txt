@@ -69,6 +69,11 @@ target_link_libraries(multi_sensor_collector serial)
 find_package(Curses REQUIRED)
 target_link_libraries(multi_sensor_collector ${CURSES_LIBRARIES})
 
+# OpenCV
+set(OpenCV_DIR /usr/lib/x86_64-linux-gnu/cmake/opencv4/)
+find_package(OpenCV REQUIRED)
+target_link_libraries(multi_sensor_collector ${OpenCV_LIBS})
+
 # MetavisionSDK
-find_package(MetavisionSDK COMPONENTS driver REQUIRED)
-target_link_libraries(multi_sensor_collector MetavisionSDK::driver)
+find_package(MetavisionSDK COMPONENTS driver core REQUIRED)
+target_link_libraries(multi_sensor_collector MetavisionSDK::driver MetavisionSDK::core)
