@@ -18,7 +18,7 @@ sensors:
         label: "CAM"
         bias_file: "../config/evk4_hd.bias"
         enable_rate_control: true
-        rate: 10000000
+        rate: 5000000
         record_rate: 100.0
         sync_rate: 10.0
         pub_process_cost: true

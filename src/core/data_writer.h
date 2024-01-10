@@ -33,7 +33,6 @@ public:
 
 private:
     std::shared_ptr<H5Easy::File> file_;
-    H5Easy::DumpOptions options_;
     std::unordered_map<std::string, long> dataset_idx_;
 
     SynchronizerPtr synchronizer_;

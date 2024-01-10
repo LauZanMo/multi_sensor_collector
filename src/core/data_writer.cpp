@@ -1,4 +1,5 @@
 #include "core/data_writer.h"
+#include "core/logger.h"
 #include "core/synchronizer.h"
 
 namespace MSC {
@@ -10,9 +11,8 @@ DataWriter::DataWriter(const YAML::Node &config) {
 }
 
 void DataWriter::init() {
-    file_    = std::make_shared<H5Easy::File>(file_name_,
+    file_ = std::make_shared<H5Easy::File>(file_name_,
                                            H5Easy::File::ReadWrite | H5Easy::File::Create | H5Easy::File::Truncate);
-    options_ = H5Easy::DumpOptions(H5Easy::Compression(1));
 
     auto sensors = synchronizer_->sensors();
     for (auto &sensor_pair : sensors) {
@@ -27,7 +27,9 @@ void DataWriter::process() {
         if (data_queue_.try_pop(ld)) {
             auto &label = ld->label;
             auto path   = absl::StrCat("/", label, "/", dataset_idx_[label]++);
-            H5Easy::dump(*file_, path, ld->data, options_);
+            H5Easy::dump(*file_, path, ld->data);
+            // 用于检查写入速度
+            // LOGI << "Writer: Data label" << label << ", start t: " << ld->data(0, 0);
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

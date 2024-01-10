@@ -142,6 +142,8 @@ void Evk4Hd::processCD(const Metavision::EventCD *begin, const Metavision::Event
                 if (last_offset_set_) {
                     auto writer = synchronizer_->dataWriter();
                     writer->write(ld_);
+                    // 用于检查写入速度
+                    // LOGI << label_ << ": Data label " << label_ << ", start t: " << start_t;
                 } else {
                     last_offset_set_ = true;
                 }
