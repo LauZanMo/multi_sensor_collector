@@ -1,0 +1,27 @@
+log_path: "/home/ubuntu/dataset/output"
+
+synchronizer:
+    label: "SYNC"
+    port: "/dev/ttyUSB1"
+    baudrate: 115200
+    timeout: 500 # ms
+
+sensors:
+    -   sensor:
+        model: "INS-Probe"
+        label: "IMU"
+        port: "/dev/ttyUSB0"
+        baudrate: 115200
+        timeout: 500 # ms
+    -   sensor:
+        model: "EVK4-HD"
+        label: "CAM"
+        bias_file: "../config/evk4_hd.bias"
+        enable_rate_control: true
+        rate: 10000000
+        record_rate: 100.0
+        sync_rate: 10.0
+        pub_process_cost: true
+
+data_writer:
+    file_name: "/home/ubuntu/dataset/whu/20240109/test.h5"
