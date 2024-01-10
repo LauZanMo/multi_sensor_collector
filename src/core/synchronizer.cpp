@@ -105,7 +105,8 @@ void Synchronizer::parse(const std::string &data) {
     absl::SimpleAtod(v[3], &stamp_bundle.stamp_trigger);
 
     auto &sensor = sensors_[std::string(v[1])];
-    sensor->insertExtTrigger(stamp_bundle);
+    if (sensor)
+        sensor->insertExtTrigger(stamp_bundle);
 }
 
 } // namespace MSC
