@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
 project(multi_sensor_collector)
 
+# 选项
+option(BUILD_UTILS "Build utils." ON)
+
 # 编译和输出配置
 set(CMAKE_CXX_STANDARD 17)
 
@@ -24,8 +27,13 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 # 可执行文件
 include_directories(${PROJECT_SOURCE_DIR}/src)
-file(GLOB_RECURSE SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.cpp)
-add_executable(multi_sensor_collector ${SRC_FILES})
+file(GLOB_RECURSE SRC_FILES
+    ${PROJECT_SOURCE_DIR}/src/core/*.cpp
+    ${PROJECT_SOURCE_DIR}/src/plugin/*.cpp
+)
+add_library(multi_sensor_collector SHARED
+    ${SRC_FILES}
+)
 
 # Glog
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -77,3 +85,14 @@ target_link_libraries(multi_sensor_collector ${OpenCV_LIBS})
 # MetavisionSDK
 find_package(MetavisionSDK COMPONENTS driver core REQUIRED)
 target_link_libraries(multi_sensor_collector MetavisionSDK::driver MetavisionSDK::core)
+
+# 可执行文件
+add_executable(multi_sensor_collector_exe
+    ${PROJECT_SOURCE_DIR}/src/main.cpp
+)
+target_link_libraries(multi_sensor_collector_exe multi_sensor_collector)
+
+# 构建工具
+if (BUILD_UTILS)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/utils)
+endif ()
