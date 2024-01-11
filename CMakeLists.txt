@@ -30,6 +30,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 file(GLOB_RECURSE SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/core/*.cpp
     ${PROJECT_SOURCE_DIR}/src/plugin/*.cpp
+    ${PROJECT_SOURCE_DIR}/src/fileio/*.cpp
 )
 add_library(multi_sensor_collector SHARED
     ${SRC_FILES}

@@ -5,8 +5,12 @@
 #include <rosbag/bag.h>
 #include <sensor_msgs/Imu.h>
 
+#include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
+#include <absl/strings/strip.h>
 #include <absl/time/clock.h>
+#include <fileio/file_base.h>
+#include <fileio/file_writer.h>
 #include <filesystem>
 #include <iostream>
 #include <yaml-cpp/yaml.h>
@@ -15,9 +19,11 @@ std::string msc_config_file = "../config/suite.yaml";
 
 void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data, int width, int height);
 void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data);
+void writeImutxt(MSC::FileWriter::Ptr &file, const Eigen::MatrixXd &data);
 
 struct SensorInfo {
     // hdf5信息
+    std::string label;
     std::string path;
     size_t max_count;
 
@@ -58,7 +64,7 @@ int main(int argc, char **argv) {
     H5Easy::File h5(h5_file_name, H5Easy::File::ReadOnly);
 
     auto bag_config     = msc_config["bag_writer"];
-    auto bag_file_name  = bag_config["file_name"].as<std::string>();
+    auto bag_file_name  = absl::StrCat(absl::StripSuffix(h5_file_name, ".h5"), ".bag");
     auto sensors_config = bag_config["sensors"];
     rosbag::Bag bag(bag_file_name, rosbag::bagmode::Write);
     // 压缩可选
@@ -78,10 +84,17 @@ int main(int argc, char **argv) {
             width  = sensor_config["width"].as<int>();
             height = sensor_config["height"].as<int>();
         }
-        sensor_infos.push_back({path, max_count, topic, type, width, height});
+        sensor_infos.push_back({label, path, max_count, topic, type, width, height});
     }
 
+    MSC::FileWriter::Ptr imu_txt{nullptr};
     for (auto &info : sensor_infos) {
+        // 如果时传感器时imu，需要额外输出txt文件
+        if (info.type == "imu") {
+            auto file_name = absl::StrCat(absl::StripSuffix(h5_file_name, ".h5"), "_", info.label, ".txt");
+            imu_txt        = MSC::FileWriter::create(file_name);
+        }
+
         double ratio = 0.1;
         for (size_t i = 0; i < info.max_count; ++i) {
             auto path = info.path + std::to_string(i);
@@ -91,14 +104,15 @@ int main(int argc, char **argv) {
             } else if (info.type == "imu") {
                 auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
                 writeImuMsg(bag, info.topic, data);
+                writeImutxt(imu_txt, data);
             }
 
             if (i > info.max_count * ratio) {
-                LOGI << absl::StrFormat("Finished %.2f%%", ratio * 100);
+                LOGI << info.label << absl::StrFormat(" progress to: %.2f%%", ratio * 100);
                 ratio += 0.1;
             }
         }
-        LOGI << absl::StrFormat("Finished %.2f%%", 100.0);
+        LOGI << info.label << absl::StrFormat(" progress to: %.2f%%", 100.0);
     }
 
     bag.close();
@@ -135,4 +149,12 @@ void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::Matrix
     msg.linear_acceleration.y = data(0, 5);
     msg.linear_acceleration.z = data(0, 6);
     bag.write(topic, msg.header.stamp, msg);
+}
+
+void writeImutxt(MSC::FileWriter::Ptr &file, const Eigen::MatrixXd &data) {
+    std::vector<double> imu;
+    for (uint8_t i = 0; i < 7; ++i) {
+        imu.push_back(data(0, i));
+    }
+    file->dump(imu);
 }

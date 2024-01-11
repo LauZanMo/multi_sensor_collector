@@ -28,7 +28,6 @@ data_writer:
     file_name: "/home/ubuntu/dataset/whu/20240109/test.h5"
 
 bag_writer:
-    file_name: "/home/ubuntu/dataset/whu/20240109/test.bag"
     sensors:
         -   sensor:
             label: "IMU"
