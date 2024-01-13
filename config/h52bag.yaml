@@ -1,0 +1,21 @@
+log_path: "/home/ubuntu/dataset/output"
+
+# 注意：这里的路径为批量处理数据集的总路径，且数据集名需要和文件夹名一致
+# 举例：${dataset_path}----box01--box01.h5
+#                      |--box02--box02.h5
+#                      |--walk01--walk01.h5
+#                      |--walk02--walk02.h5
+datasets_path: "/home/ubuntu/dataset/whu/20240109"
+
+bag_writer:
+    sensors:
+        -   sensor:
+            label: "IMU"
+            topic: "/dvs/imu"
+            type: "imu"
+        -   sensor:
+            label: "CAM"
+            topic: "/dvs/events"
+            type: "event"
+            width: 1280
+            height: 720

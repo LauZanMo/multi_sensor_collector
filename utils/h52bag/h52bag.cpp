@@ -7,15 +7,17 @@
 
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
+#include <absl/strings/str_join.h>
 #include <absl/strings/strip.h>
 #include <absl/time/clock.h>
 #include <fileio/file_base.h>
 #include <fileio/file_writer.h>
 #include <filesystem>
 #include <iostream>
+#include <tbb/parallel_for.h>
 #include <yaml-cpp/yaml.h>
 
-std::string msc_config_file = "../config/suite.yaml";
+std::string msc_config_file = "../config/h52bag.yaml";
 
 void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data, int width, int height);
 void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data);
@@ -60,63 +62,83 @@ int main(int argc, char **argv) {
         FLAGS_log_dir = log_path;
     }
 
-    auto h5_file_name = msc_config["data_writer"]["file_name"].as<std::string>();
-    H5Easy::File h5(h5_file_name, H5Easy::File::ReadOnly);
-
-    auto bag_config     = msc_config["bag_writer"];
-    auto bag_file_name  = absl::StrCat(absl::StripSuffix(h5_file_name, ".h5"), ".bag");
-    auto sensors_config = bag_config["sensors"];
-    rosbag::Bag bag(bag_file_name, rosbag::bagmode::Write);
-    // 压缩可选
-    // bag.setCompression(rosbag::compression::CompressionType::BZ2);
-    bag.setChunkThreshold(1024 * 1024);
-
-    std::vector<SensorInfo> sensor_infos;
-    for (const auto &sensor_config : sensors_config) {
-        auto label     = sensor_config["label"].as<std::string>();
-        auto path      = "/" + label + "/";
-        auto max_count = h5.getGroup(label).getNumberObjects();
-
-        auto topic = sensor_config["topic"].as<std::string>();
-        auto type  = sensor_config["type"].as<std::string>();
-        int width = 0, height = 0;
-        if (type == "event") {
-            width  = sensor_config["width"].as<int>();
-            height = sensor_config["height"].as<int>();
+    // 搜索数据集
+    std::vector<std::string> dataset_keys;
+    std::vector<std::string> dataset_names;
+    auto datasets_path = msc_config["datasets_path"].as<std::string>();
+    for (const auto &entry : std::filesystem::directory_iterator(datasets_path)) {
+        if (entry.is_directory()) {
+            auto key = absl::StrCat(entry.path().string(), "/", entry.path().filename().string());
+            dataset_keys.push_back(key);
+            dataset_names.push_back(entry.path().filename().string());
         }
-        sensor_infos.push_back({label, path, max_count, topic, type, width, height});
     }
+    LOGI << "Found datasets: " << absl::StrJoin(dataset_names, ", ");
 
-    MSC::FileWriter::Ptr imu_txt{nullptr};
-    for (auto &info : sensor_infos) {
-        // 如果时传感器时imu，需要额外输出txt文件
-        if (info.type == "imu") {
-            auto file_name = absl::StrCat(absl::StripSuffix(h5_file_name, ".h5"), "_", info.label, ".txt");
-            imu_txt        = MSC::FileWriter::create(file_name);
-        }
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, dataset_keys.size()), [&](const tbb::blocked_range<size_t> &r) {
+        for (size_t i = r.begin(); i != r.end(); ++i) {
+            auto &key  = dataset_keys[i];
+            auto &name = dataset_names[i];
 
-        double ratio = 0.1;
-        for (size_t i = 0; i < info.max_count; ++i) {
-            auto path = info.path + std::to_string(i);
-            if (info.type == "event") {
-                auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
-                writeEventMsg(bag, info.topic, data, info.width, info.height);
-            } else if (info.type == "imu") {
-                auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
-                writeImuMsg(bag, info.topic, data);
-                writeImutxt(imu_txt, data);
+            auto h5_name = absl::StrCat(key, ".h5");
+            H5Easy::File h5(h5_name, H5Easy::File::ReadOnly);
+
+            auto bag_name = absl::StrCat(key, ".bag");
+            rosbag::Bag bag(bag_name, rosbag::bagmode::Write);
+            bag.setChunkThreshold(1024 * 1024);
+
+            // 读取hdf5配置信息
+            auto bag_config     = msc_config["bag_writer"];
+            auto sensors_config = bag_config["sensors"];
+            std::vector<SensorInfo> sensor_infos;
+            for (const auto &sensor_config : sensors_config) {
+                auto label     = sensor_config["label"].as<std::string>();
+                auto path      = "/" + label + "/";
+                auto max_count = h5.getGroup(label).getNumberObjects();
+
+                auto topic = sensor_config["topic"].as<std::string>();
+                auto type  = sensor_config["type"].as<std::string>();
+                int width = 0, height = 0;
+                if (type == "event") {
+                    width  = sensor_config["width"].as<int>();
+                    height = sensor_config["height"].as<int>();
+                }
+                sensor_infos.push_back({label, path, max_count, topic, type, width, height});
             }
 
-            if (i > info.max_count * ratio) {
-                LOGI << info.label << absl::StrFormat(" progress to: %.2f%%", ratio * 100);
-                ratio += 0.1;
-            }
-        }
-        LOGI << info.label << absl::StrFormat(" progress to: %.2f%%", 100.0);
-    }
+            MSC::FileWriter::Ptr imu_txt{nullptr};
+            for (auto &info : sensor_infos) {
+                // 如果时传感器时imu，需要额外输出txt文件
+                if (info.type == "imu") {
+                    auto file_name = absl::StrCat(key, "_", info.label, ".txt");
+                    imu_txt        = MSC::FileWriter::create(file_name);
+                }
 
-    bag.close();
-    LOGI << "Finished.";
+                double ratio = 0.1;
+                for (size_t j = 0; j < info.max_count; ++j) {
+                    auto path = info.path + std::to_string(j);
+                    if (info.type == "event") {
+                        auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
+                        writeEventMsg(bag, info.topic, data, info.width, info.height);
+                    } else if (info.type == "imu") {
+                        auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
+                        writeImuMsg(bag, info.topic, data);
+                        writeImutxt(imu_txt, data);
+                    }
+
+                    if (j > info.max_count * ratio) {
+                        LOGI << "Dataset " << name << ": " << info.label
+                             << absl::StrFormat(" progress to: %.2f%%", ratio * 100);
+                        ratio += 0.1;
+                    }
+                }
+                LOGI << "Dataset " << name << ": " << info.label << absl::StrFormat(" progress to: %.2f%%", 100.0);
+            }
+
+            bag.close();
+            LOGI << "Dataset " << name << " finished.";
+        }
+    });
 
     MSC::Logger::shutdown();
     return 0;

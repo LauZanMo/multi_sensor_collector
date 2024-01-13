@@ -26,16 +26,3 @@ sensors:
 
 data_writer:
     file_name: "/home/ubuntu/dataset/whu/20240109/test.h5"
-
-bag_writer:
-    sensors:
-        -   sensor:
-            label: "IMU"
-            topic: "/dvs/imu"
-            type: "imu"
-        -   sensor:
-            label: "CAM"
-            topic: "/dvs/events"
-            type: "event"
-            width: 1280
-            height: 720
