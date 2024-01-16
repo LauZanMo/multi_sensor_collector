@@ -22,7 +22,7 @@ UI::~UI() {
 
 void UI::init() {
     // 初始化TUI
-    setlocale(LC_ALL, "");  // 设置locale
+    setlocale(LC_ALL, ""); // 设置locale
     initscr();
 
     start_color();
