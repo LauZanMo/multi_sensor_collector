@@ -23,7 +23,7 @@ public:
     void init();
     void process();
 
-    void write(const LabeledDataPtr &data) {
+    void write(const LabeledDataBasePtr &data) {
         data_queue_.push(data);
     }
 
@@ -37,7 +37,7 @@ private:
 
     SynchronizerPtr synchronizer_;
 
-    tbb::concurrent_queue<LabeledDataPtr> data_queue_;
+    tbb::concurrent_queue<LabeledDataBasePtr> data_queue_;
 
     // 参数
     std::string file_name_;

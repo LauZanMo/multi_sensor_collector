@@ -21,14 +21,17 @@ void DataWriter::init() {
 }
 
 void DataWriter::process() {
-    LabeledDataPtr ld;
+    LabeledDataBasePtr ld;
     while (synchronizer_->isRunning() || !data_queue_.empty()) {
         if (data_queue_.try_pop(ld)) {
             auto &label = ld->label;
             auto path   = absl::StrCat("/", label, "/", dataset_idx_[label]++);
-            H5Easy::dump(*file_, path, ld->data);
-            // 用于检查写入速度
-            // LOGI << "Writer: Data label" << label << ", start t: " << ld->data(0, 0);
+            synchronizer_->sensors()[label]->dump(file_, path, ld);
+
+            // 检查写入速度
+            if (data_queue_.unsafe_size() > synchronizer_->sensors().size() * 5) {
+                LOGW << "DataWriter: Writing speed is slower than collecting speed!";
+            }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

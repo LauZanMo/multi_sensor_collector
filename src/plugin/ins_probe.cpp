@@ -2,6 +2,7 @@
 
 #include <core/logger.h>
 #include <core/synchronizer.h>
+#include <highfive/H5Easy.hpp>
 
 namespace MSC {
 
@@ -11,6 +12,7 @@ InsProbe::InsProbe(const YAML::Node &config, const YAML::Node &sensor_config)
     require_thread_ = true;
 
     label_                    = sensor_config["label"].as<std::string>();
+    rate_                     = sensor_config["rate"].as<uint32_t>();
     serial_param_.port        = sensor_config["port"].as<std::string>();
     serial_param_.baudrate    = sensor_config["baudrate"].as<uint32_t>();
     const auto timeout        = sensor_config["timeout"].as<uint32_t>();
@@ -51,38 +53,42 @@ void InsProbe::process() {
                     }
                     prev_t = insprobe_imu_.week_second;
 
-                    auto imu_inc = std::make_shared<LabeledData>();
-                    auto imu_abs = std::make_shared<LabeledData>();
+                    if (!ld_) {
+                        ld_        = std::make_shared<ImuData>();
+                        ld_->label = label_;
+                        ld_->stamps.resize(rate_, 1);
+                        ld_->data.resize(rate_, 6);
+                        current_row_ = 0;
+                    }
 
-                    imu_inc->label = imu_abs->label = label_;
-
-                    auto &data_inc = imu_inc->data;
-                    auto &data_abs = imu_abs->data;
-                    data_inc.resize(1, 7);
-                    data_abs.resize(1, 7);
+                    Eigen::Matrix<double, 1, 6> imu_inc;
 
                     // 转换为写入格式：增量式和绝对式
-                    data_inc(0, 0) = data_abs(0, 0) = insprobe_imu_.week_second;
+                    ld_->stamps(current_row_, 0) = insprobe_imu_.week_second;
 
-                    data_inc(0, 1) = insprobe_imu_.gyro_x * DEG2RAD;
-                    data_inc(0, 2) = insprobe_imu_.gyro_y * DEG2RAD;
-                    data_inc(0, 3) = insprobe_imu_.gyro_z * DEG2RAD;
-                    data_inc(0, 4) = insprobe_imu_.acc_x;
-                    data_inc(0, 5) = insprobe_imu_.acc_y;
-                    data_inc(0, 6) = insprobe_imu_.acc_z;
+                    imu_inc(0, 0) = insprobe_imu_.gyro_x * DEG2RAD;
+                    imu_inc(0, 1) = insprobe_imu_.gyro_y * DEG2RAD;
+                    imu_inc(0, 2) = insprobe_imu_.gyro_z * DEG2RAD;
+                    imu_inc(0, 3) = insprobe_imu_.acc_x;
+                    imu_inc(0, 4) = insprobe_imu_.acc_y;
+                    imu_inc(0, 5) = insprobe_imu_.acc_z;
 
-                    data_abs.block<1, 6>(0, 1) = data_inc.block<1, 6>(0, 1) * dt_inv;
+                    ld_->data.block<1, 6>(current_row_, 0) = imu_inc * dt_inv;
+                    current_row_++;
 
                     // 写入
-                    if (record_) {
-                        auto writer = synchronizer_->dataWriter();
-                        writer->write(imu_abs);
+                    if (current_row_ == rate_) {
+                        if (record_) {
+                            auto writer = synchronizer_->dataWriter();
+                            writer->write(std::static_pointer_cast<LabeledDataBase>(ld_));
+                        }
+
+                        ld_.reset();
                     }
 
                     // 可视化
                     if (visualize_) {
-                        // LOGI << label_ << ": IMU data Inc: " << data_inc.transpose().format(Logger::mat_fmt);
-                        // LOGI << label_ << ": IMU data Abs: " << data_abs.transpose().format(Logger::mat_fmt);
+                        // LOGI << label_ << ": IMU data Inc: " << imu_inc.transpose().format(Logger::mat_fmt);
                     }
 
                     if (!is_imu_published) {
@@ -108,6 +114,19 @@ void InsProbe::visualizeStart() {
 void InsProbe::visualizeStop() {
     LOGI << label_ << ": IMU data visualization stopped.";
     visualize_ = false;
+}
+
+void InsProbe::dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) {
+    auto imu_data = std::static_pointer_cast<ImuData>(data);
+    H5Easy::dump(*file, absl::StrCat(path, "/stamp"), imu_data->stamps);
+    H5Easy::dump(*file, absl::StrCat(path, "/data"), imu_data->data);
+}
+
+ImuDataPtr InsProbe::load(HighFive::FilePtr &file, const std::string &path) {
+    auto imu_data    = std::make_shared<ImuData>();
+    imu_data->stamps = H5Easy::load<Eigen::Matrix<double, Eigen::Dynamic, 1>>(*file, absl::StrCat(path, "/stamp"));
+    imu_data->data   = H5Easy::load<Eigen::Matrix<double, Eigen::Dynamic, 6>>(*file, absl::StrCat(path, "/data"));
+    return imu_data;
 }
 
 bool InsProbe::parse(const uint8_t &data) {

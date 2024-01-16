@@ -37,6 +37,9 @@ public:
     void visualizeStart() override;
     void visualizeStop() override;
 
+    void dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) override;
+    static ImuDataPtr load(HighFive::FilePtr &file, const std::string &path);
+
 private:
     bool parse(const uint8_t &data);
 
@@ -46,6 +49,10 @@ private:
     uint8_t counter_{0}, checksum_{0};
     InsProbeIMU insprobe_imu_;
 
+    ImuDataPtr ld_;
+    long current_row_;
+
+    uint32_t rate_;
     std::atomic<bool> visualize_{false};
 
     static constexpr double DEG2RAD = M_PI / 180.0;

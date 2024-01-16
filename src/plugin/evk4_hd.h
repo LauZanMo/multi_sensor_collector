@@ -22,6 +22,9 @@ public:
     void visualizeStart() override;
     void visualizeStop() override;
 
+    void dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) override;
+    static EventsDataPtr load(HighFive::FilePtr &file, const std::string &path);
+
 private:
     bool openCamera();
     void processCD(const Metavision::EventCD *begin, const Metavision::EventCD *end);
@@ -32,7 +35,7 @@ private:
 
     // 容器
     tbb::concurrent_queue<StampBundle> sensor_stamp_queue_, ext_stamp_queue_;
-    LabeledDataPtr ld_;
+    EventsDataPtr ld_;
     long current_row_;
     std::atomic<bool> offset_set_{false}, last_offset_set_{false};
     std::atomic<double> time_offset_{0.0};
@@ -40,9 +43,7 @@ private:
     // 参数
     std::string bias_file_;
     uint32_t rate_;
-    double record_interval_;
     double sync_threshold_;
-    bool pub_process_cost_;
     long max_size_;
     uint32_t acc_size_;
 };

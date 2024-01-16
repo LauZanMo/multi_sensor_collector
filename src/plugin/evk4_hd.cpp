@@ -2,6 +2,7 @@
 #include "core/logger.h"
 
 #include <core/synchronizer.h>
+#include <highfive/H5Easy.hpp>
 #include <metavision/hal/facilities/i_erc.h>
 #include <metavision/hal/facilities/i_trigger_in.h>
 #include <opencv4/opencv2/highgui/highgui.hpp>
@@ -15,16 +16,13 @@ Evk4Hd::Evk4Hd(const YAML::Node &config, const YAML::Node &sensor_config)
     type_           = Type::EVENT;
     require_thread_ = false;
 
-    label_            = sensor_config["label"].as<std::string>();
-    bias_file_        = sensor_config["bias_file"].as<std::string>();
-    rate_             = sensor_config["rate"].as<uint32_t>();
-    auto record_rate  = sensor_config["record_rate"].as<double>();
-    record_interval_  = 1.0 / record_rate;
-    auto sync_rate    = sensor_config["sync_rate"].as<double>();
-    sync_threshold_   = 0.1 / sync_rate;
-    pub_process_cost_ = sensor_config["pub_process_cost"].as<bool>();
-    max_size_         = rate_ * record_interval_;
-    acc_size_         = sensor_config["acc_size"].as<uint32_t>();
+    label_          = sensor_config["label"].as<std::string>();
+    bias_file_      = sensor_config["bias_file"].as<std::string>();
+    rate_           = sensor_config["rate"].as<uint32_t>();
+    max_size_       = rate_;
+    auto sync_rate  = sensor_config["sync_rate"].as<double>();
+    sync_threshold_ = 0.1 / sync_rate;
+    acc_size_       = sensor_config["acc_size"].as<uint32_t>();
 }
 
 Evk4Hd::~Evk4Hd() {
@@ -96,6 +94,21 @@ void Evk4Hd::visualizeStart() {
 void Evk4Hd::visualizeStop() {
 }
 
+void Evk4Hd::dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) {
+    auto events_data = std::static_pointer_cast<EventsData>(data);
+    H5Easy::dump(*file, absl::StrCat(path, "/stamp"), events_data->stamps);
+    H5Easy::dump(*file, absl::StrCat(path, "/loc"), events_data->locs);
+    H5Easy::dump(*file, absl::StrCat(path, "/pol"), events_data->pols);
+}
+
+EventsDataPtr Evk4Hd::load(HighFive::FilePtr &file, const std::string &path) {
+    auto events_data    = std::make_shared<EventsData>();
+    events_data->stamps = H5Easy::load<Eigen::Matrix<double, Eigen::Dynamic, 1>>(*file, absl::StrCat(path, "/stamp"));
+    events_data->locs   = H5Easy::load<Eigen::Matrix<uint16_t, Eigen::Dynamic, 2>>(*file, absl::StrCat(path, "/loc"));
+    events_data->pols   = H5Easy::load<Eigen::Matrix<uint8_t, Eigen::Dynamic, 1>>(*file, absl::StrCat(path, "/pol"));
+    return events_data;
+}
+
 bool Evk4Hd::openCamera() {
     try {
         camera_ = Metavision::Camera::from_first_available();
@@ -116,34 +129,37 @@ void Evk4Hd::processCD(const Metavision::EventCD *begin, const Metavision::Event
     if (end > begin) {
         const auto size = end - begin;
         if (!ld_) {
-            ld_        = std::make_shared<LabeledData>();
+            ld_        = std::make_shared<EventsData>();
             ld_->label = label_;
-            ld_->data.resize(max_size_, 4);
+            ld_->stamps.resize(max_size_);
+            ld_->locs.resize(max_size_, 2);
+            ld_->pols.resize(max_size_);
             current_row_ = 0;
         }
 
         for (long i = 0; i < size; i++, current_row_++) {
             if (current_row_ == max_size_)
                 break;
-            auto &e                    = begin[i];
-            ld_->data(current_row_, 0) = e.t * 1e-6 - time_offset_;
-            ld_->data(current_row_, 1) = e.x;
-            ld_->data(current_row_, 2) = e.y;
-            ld_->data(current_row_, 3) = e.p;
+            auto &e                      = begin[i];
+            ld_->stamps(current_row_, 0) = e.t * 1e-6 - time_offset_;
+            ld_->locs(current_row_, 0)   = e.x;
+            ld_->locs(current_row_, 1)   = e.y;
+            ld_->pols(current_row_, 0)   = e.p;
         }
 
-        auto start_t = ld_->data(0, 0);
-        auto end_t   = ld_->data(current_row_ - 1, 0);
-        if (end_t - start_t > record_interval_ || current_row_ == max_size_) {
-            if (current_row_ != max_size_)
-                ld_->data.conservativeResize(current_row_, Eigen::NoChange);
+        auto start_t = ld_->stamps(0, 0);
+        auto end_t   = ld_->stamps(current_row_ - 1, 0);
+        if (end_t - start_t > 1.0 || current_row_ == max_size_) {
+            if (current_row_ != max_size_) {
+                ld_->stamps.conservativeResize(current_row_, Eigen::NoChange);
+                ld_->locs.conservativeResize(current_row_, Eigen::NoChange);
+                ld_->pols.conservativeResize(current_row_, Eigen::NoChange);
+            }
 
             if (record_ && offset_set_) {
                 if (last_offset_set_) {
                     auto writer = synchronizer_->dataWriter();
-                    writer->write(ld_);
-                    // 用于检查写入速度
-                    // LOGI << label_ << ": Data label " << label_ << ", start t: " << start_t;
+                    writer->write(std::static_pointer_cast<LabeledDataBase>(ld_));
                 } else {
                     last_offset_set_ = true;
                 }

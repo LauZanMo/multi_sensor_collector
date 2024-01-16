@@ -13,15 +13,13 @@ sensors:
         port: "/dev/ttyUSB0"
         baudrate: 115200
         timeout: 500 # ms
+        rate: 200
     -   sensor:
         model: "EVK4-HD"
         label: "CAM"
         bias_file: "../config/evk4_hd.bias"
-        enable_rate_control: true
-        rate: 5000000
-        record_rate: 100.0
+        rate: 20000000
         sync_rate: 10.0
-        pub_process_cost: true
         acc_size: 20000
 
 data_writer:

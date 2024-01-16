@@ -13,9 +13,9 @@ bag_writer:
             label: "IMU"
             topic: "/dvs/imu"
             type: "imu"
+            params: []
         -   sensor:
             label: "CAM"
             topic: "/dvs/events"
             type: "event"
-            width: 1280
-            height: 720
+            params: ["1280", "720", "100.0"]

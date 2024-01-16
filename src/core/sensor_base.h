@@ -5,6 +5,13 @@
 
 #include "core/types.h"
 
+namespace HighFive {
+
+class File;
+typedef std::shared_ptr<File> FilePtr;
+
+} // namespace HighFive
+
 namespace MSC {
 
 class Synchronizer;
@@ -34,6 +41,8 @@ public:
     virtual void recordStop() {
         record_ = false;
     }
+
+    virtual void dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) = 0;
 
     Type type() const {
         return type_;

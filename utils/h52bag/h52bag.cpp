@@ -1,4 +1,7 @@
 #include "core/logger.h"
+#include "core/types.h"
+#include "plugin/evk4_hd.h"
+#include "plugin/ins_probe.h"
 
 #include <dvs_msgs/EventArray.h>
 #include <highfive/H5Easy.hpp>
@@ -10,7 +13,7 @@
 #include <absl/strings/str_join.h>
 #include <absl/strings/strip.h>
 #include <absl/time/clock.h>
-#include <fileio/file_base.h>
+
 #include <fileio/file_writer.h>
 #include <filesystem>
 #include <iostream>
@@ -19,9 +22,11 @@
 
 std::string msc_config_file = "../config/h52bag.yaml";
 
-void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data, int width, int height);
-void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data);
-void writeImutxt(MSC::FileWriter::Ptr &file, const Eigen::MatrixXd &data);
+void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const std::vector<std::string> &params,
+                   const MSC::EventsDataPtr &data);
+void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const std::vector<std::string> &params,
+                 const MSC::ImuDataPtr &data);
+void writeImutxt(MSC::FileWriter::Ptr &file, const std::vector<std::string> &params, const MSC::ImuDataPtr &data);
 
 struct SensorInfo {
     // hdf5信息
@@ -32,8 +37,7 @@ struct SensorInfo {
     // bag信息
     std::string topic;
     std::string type;
-    int width;
-    int height;
+    std::vector<std::string> params;
 };
 
 int main(int argc, char **argv) {
@@ -68,9 +72,12 @@ int main(int argc, char **argv) {
     auto datasets_path = msc_config["datasets_path"].as<std::string>();
     for (const auto &entry : std::filesystem::directory_iterator(datasets_path)) {
         if (entry.is_directory()) {
-            auto key = absl::StrCat(entry.path().string(), "/", entry.path().filename().string());
+            auto name = entry.path().filename().string();
+            if (name == "output" || name[0] == '.')
+                continue;
+            auto key = absl::StrCat(entry.path().string(), "/", name);
             dataset_keys.push_back(key);
-            dataset_names.push_back(entry.path().filename().string());
+            dataset_names.push_back(name);
         }
     }
     LOGI << "Found datasets: " << absl::StrJoin(dataset_names, ", ");
@@ -81,7 +88,7 @@ int main(int argc, char **argv) {
             auto &name = dataset_names[i];
 
             auto h5_name = absl::StrCat(key, ".h5");
-            H5Easy::File h5(h5_name, H5Easy::File::ReadOnly);
+            auto h5      = std::make_shared<H5Easy::File>(h5_name, H5Easy::File::ReadOnly);
 
             auto bag_name = absl::StrCat(key, ".bag");
             rosbag::Bag bag(bag_name, rosbag::bagmode::Write);
@@ -93,17 +100,13 @@ int main(int argc, char **argv) {
             std::vector<SensorInfo> sensor_infos;
             for (const auto &sensor_config : sensors_config) {
                 auto label     = sensor_config["label"].as<std::string>();
-                auto path      = "/" + label + "/";
-                auto max_count = h5.getGroup(label).getNumberObjects();
+                auto path      = absl::StrCat("/", label, "/");
+                auto max_count = h5->getGroup(label).getNumberObjects();
 
-                auto topic = sensor_config["topic"].as<std::string>();
-                auto type  = sensor_config["type"].as<std::string>();
-                int width = 0, height = 0;
-                if (type == "event") {
-                    width  = sensor_config["width"].as<int>();
-                    height = sensor_config["height"].as<int>();
-                }
-                sensor_infos.push_back({label, path, max_count, topic, type, width, height});
+                auto topic  = sensor_config["topic"].as<std::string>();
+                auto type   = sensor_config["type"].as<std::string>();
+                auto params = sensor_config["params"].as<std::vector<std::string>>();
+                sensor_infos.push_back({label, path, max_count, topic, type, params});
             }
 
             MSC::FileWriter::Ptr imu_txt{nullptr};
@@ -116,14 +119,14 @@ int main(int argc, char **argv) {
 
                 double ratio = 0.1;
                 for (size_t j = 0; j < info.max_count; ++j) {
-                    auto path = info.path + std::to_string(j);
+                    auto path = absl::StrCat(info.path, j);
                     if (info.type == "event") {
-                        auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
-                        writeEventMsg(bag, info.topic, data, info.width, info.height);
+                        auto data = MSC::Evk4Hd::load(h5, path);
+                        writeEventMsg(bag, info.topic, info.params, data);
                     } else if (info.type == "imu") {
-                        auto data = H5Easy::load<Eigen::MatrixXd>(h5, path);
-                        writeImuMsg(bag, info.topic, data);
-                        writeImutxt(imu_txt, data);
+                        auto data = MSC::InsProbe::load(h5, path);
+                        writeImuMsg(bag, info.topic, info.params, data);
+                        writeImutxt(imu_txt, info.params, data);
                     }
 
                     if (j > info.max_count * ratio) {
@@ -144,39 +147,56 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data, int width, int height) {
+void writeEventMsg(rosbag::Bag &bag, const std::string &topic, const std::vector<std::string> &params,
+                   const MSC::EventsDataPtr &data) {
     dvs_msgs::EventArray msg;
-    msg.header.stamp.fromSec(data(data.rows() - 1, 0));
-    msg.width  = width;
-    msg.height = height;
-    msg.events.reserve(data.rows());
-    for (int i = 0; i < data.rows(); ++i) {
-        dvs_msgs::Event event;
-        event.ts.fromSec(data(i, 0));
-        event.x        = std::round(data(i, 1));
-        event.y        = std::round(data(i, 2));
-        event.polarity = data(i, 3) > 0.5 ? true : false;
+    absl::SimpleAtoi(params[0], &msg.width);
+    absl::SimpleAtoi(params[1], &msg.height);
+    double rate;
+    absl::SimpleAtod(params[2], &rate);
+    auto duration = 1.0 / rate;
+
+    long start_row = 0;
+    dvs_msgs::Event event;
+    for (auto i = 0; i < data->stamps.rows(); ++i) {
+        event.ts.fromSec(data->stamps(i, 0));
+        event.x        = data->locs(i, 0);
+        event.y        = data->locs(i, 1);
+        event.polarity = data->pols(i, 0);
         msg.events.push_back(event);
+
+        if (data->stamps(i, 0) - data->stamps(start_row, 0) >= duration || i == data->stamps.rows() - 1) {
+            msg.header.stamp.fromSec(data->stamps(i, 0));
+            bag.write(topic, msg.header.stamp, msg);
+            msg.events.clear();
+            start_row = i;
+        }
     }
-    bag.write(topic, msg.header.stamp, msg);
 }
 
-void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const Eigen::MatrixXd &data) {
+void writeImuMsg(rosbag::Bag &bag, const std::string &topic, const std::vector<std::string> &params,
+                 const MSC::ImuDataPtr &data) {
     sensor_msgs::Imu msg;
-    msg.header.stamp.fromSec(data(0, 0));
-    msg.angular_velocity.x    = data(0, 1);
-    msg.angular_velocity.y    = data(0, 2);
-    msg.angular_velocity.z    = data(0, 3);
-    msg.linear_acceleration.x = data(0, 4);
-    msg.linear_acceleration.y = data(0, 5);
-    msg.linear_acceleration.z = data(0, 6);
-    bag.write(topic, msg.header.stamp, msg);
+    for (auto i = 0; i < data->stamps.rows(); ++i) {
+        msg.header.stamp.fromSec(data->stamps(i, 0));
+        msg.angular_velocity.x    = data->data(i, 0);
+        msg.angular_velocity.y    = data->data(i, 1);
+        msg.angular_velocity.z    = data->data(i, 2);
+        msg.linear_acceleration.x = data->data(i, 3);
+        msg.linear_acceleration.y = data->data(i, 4);
+        msg.linear_acceleration.z = data->data(i, 5);
+        bag.write(topic, msg.header.stamp, msg);
+    }
 }
 
-void writeImutxt(MSC::FileWriter::Ptr &file, const Eigen::MatrixXd &data) {
+void writeImutxt(MSC::FileWriter::Ptr &file, const std::vector<std::string> &params, const MSC::ImuDataPtr &data) {
     std::vector<double> imu;
-    for (uint8_t i = 0; i < 7; ++i) {
-        imu.push_back(data(0, i));
+    for (auto i = 0; i < data->stamps.rows(); ++i) {
+        imu.clear();
+        imu.push_back(data->stamps(i, 0));
+        for (uint8_t j = 0; j < 6; ++j) {
+            imu.push_back(data->data(i, j));
+        }
+        file->dump(imu);
     }
-    file->dump(imu);
 }

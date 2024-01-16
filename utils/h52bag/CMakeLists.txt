@@ -1,5 +1,5 @@
-aux_source_directory(. TEST_SOURCE)
-add_executable(h52bag ${TEST_SOURCE})
+aux_source_directory(. UTILS_SOURCE)
+add_executable(h52bag ${UTILS_SOURCE})
 target_link_libraries(h52bag multi_sensor_collector)
 
 # ROS
