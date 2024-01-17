@@ -3,6 +3,7 @@
 #include <metavision/sdk/core/algorithms/periodic_frame_generation_algorithm.h>
 #include <metavision/sdk/driver/camera.h>
 #include <tbb/concurrent_queue.h>
+#include <thread>
 #include <yaml-cpp/yaml.h>
 
 #include "core/sensor_base.h"
@@ -32,6 +33,10 @@ private:
 
     Metavision::Camera camera_;
     std::shared_ptr<Metavision::PeriodicFrameGenerationAlgorithm> frame_gen_;
+
+    tbb::concurrent_queue<cv::Mat> frame_queue_;
+    std::atomic<bool> visualize_{false};
+    std::shared_ptr<std::thread> viz_thread_;
 
     // 容器
     tbb::concurrent_queue<StampBundle> sensor_stamp_queue_, ext_stamp_queue_;

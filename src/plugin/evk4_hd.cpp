@@ -57,14 +57,13 @@ void Evk4Hd::init() {
     LOGI << label_ << ": Camera serial number: " << config.serial_number;
 
     // 加入UI
-    // TODO: 加入可视化控制
     auto fps   = 50.0;
     frame_gen_ = std::make_shared<Metavision::PeriodicFrameGenerationAlgorithm>(width, height, acc_size_, fps);
     cv::namedWindow(label_, cv::WINDOW_NORMAL);
     cv::resizeWindow(label_, width, height);
     frame_gen_->set_output_callback([this](Metavision::timestamp, cv::Mat &frame) {
-        cv::imshow(label_, frame);
-        cv::waitKey(1);
+        if (visualize_)
+            frame_queue_.push(frame);
     });
 }
 
@@ -89,9 +88,29 @@ void Evk4Hd::insertExtTrigger(const StampBundle &ext) {
 }
 
 void Evk4Hd::visualizeStart() {
+    visualize_ = true;
+    if (!viz_thread_) {
+        viz_thread_ = std::make_shared<std::thread>([this]() {
+            while (visualize_) {
+                cv::Mat frame;
+                if (frame_queue_.try_pop(frame)) {
+                    cv::imshow(label_, frame);
+                    cv::waitKey(1);
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+            }
+        });
+    }
 }
 
 void Evk4Hd::visualizeStop() {
+    visualize_ = false;
+    if (viz_thread_) {
+        if (viz_thread_->joinable())
+            viz_thread_->join();
+        viz_thread_.reset();
+    }
 }
 
 void Evk4Hd::dump(HighFive::FilePtr &file, const std::string &path, const LabeledDataBasePtr &data) {
