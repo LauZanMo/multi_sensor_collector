@@ -1,4 +1,3 @@
-#include "absl/strings/str_cat.h"
 #include "core/logger.h"
 #include "core/synchronizer.h"
 
