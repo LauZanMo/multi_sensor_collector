@@ -42,7 +42,7 @@ private:
     tbb::concurrent_queue<StampBundle> sensor_stamp_queue_, ext_stamp_queue_;
     EventsDataPtr ld_;
     long current_row_;
-    std::atomic<bool> offset_set_{false}, last_offset_set_{false};
+    std::atomic<bool> offset_set_{false}, last_offset_set_{false}, offset_reset_{false};
     std::atomic<double> time_offset_{0.0};
 
     // 参数

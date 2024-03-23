@@ -192,43 +192,69 @@ void Evk4Hd::processCD(const Metavision::EventCD *begin, const Metavision::Event
 void Evk4Hd::processExtTrigger(const Metavision::EventExtTrigger *begin, const Metavision::EventExtTrigger *end) {
     if (end > begin) {
         for (auto e = begin; e != end; e++) {
-            StampBundle stamp_bundle;
-            stamp_bundle.stamp_local   = absl::Now();
-            stamp_bundle.stamp_trigger = e->t * 1e-6;
-            sensor_stamp_queue_.emplace(stamp_bundle);
+            // 由于INS-Probe只发上升沿的时间戳，因此只处理上升沿触发事件(EVK4此时极性为0!)
+            if (!e->p) {
+                StampBundle stamp_bundle;
+                stamp_bundle.stamp_local   = absl::Now();
+                stamp_bundle.stamp_trigger = e->t * 1e-6;
+                sensor_stamp_queue_.emplace(stamp_bundle);
+            }
         }
 
         StampBundle stamp_bundle_sensor, stamp_bundle_ext;
-        while (sensor_stamp_queue_.try_pop(stamp_bundle_sensor)) {
-            auto local_sensor = stamp_bundle_sensor.stamp_local;
+        bool sensor_forward{false};
+        if (!offset_set_ || offset_reset_) {
+            // 对齐传感器和外部触发时间戳队列
+            while (sensor_stamp_queue_.try_pop(stamp_bundle_sensor)) {
+                auto local_sensor = stamp_bundle_sensor.stamp_local;
 
-            while (ext_stamp_queue_.try_pop(stamp_bundle_ext)) {
-                auto local_ext = stamp_bundle_ext.stamp_local;
-                auto diff      = absl::ToDoubleSeconds(local_sensor - local_ext);
-                auto abs_diff  = std::abs(diff);
-
-                if (diff < 0.0 && abs_diff > sync_threshold_)
-                    break;
-
-                if (abs_diff < sync_threshold_) {
-                    auto offset = stamp_bundle_sensor.stamp_trigger - stamp_bundle_ext.stamp_trigger;
-                    if (offset_set_) {
-                        if (std::abs(offset - time_offset_) < 1e-4) {
-                            time_offset_ = offset;
-                        } else {
-                            LOGW << label_ << ": Time offset is not stable!";
-                        }
-                    } else {
-                        time_offset_ = offset;
-                        LOGI << label_ << ": Time offset is initialized to " << time_offset_ << "s.";
-                        offset_set_ = true;
+                if (sensor_forward) {
+                    auto local_ext = stamp_bundle_ext.stamp_local;
+                    auto diff      = absl::ToDoubleSeconds(local_sensor - local_ext);
+                    if (diff > sync_threshold_) {
+                        sensor_forward = false;
                     }
-                    break;
+                } else {
+                    while (ext_stamp_queue_.try_pop(stamp_bundle_ext)) {
+                        auto local_ext = stamp_bundle_ext.stamp_local;
+                        auto diff      = absl::ToDoubleSeconds(local_sensor - local_ext);
+                        auto abs_diff  = std::abs(diff);
+
+                        if (diff < 0.0 && abs_diff > sync_threshold_) {
+                            sensor_forward = true;
+                            break;
+                        }
+
+                        if (abs_diff < sync_threshold_) {
+                            time_offset_ = stamp_bundle_sensor.stamp_trigger - stamp_bundle_ext.stamp_trigger;
+                            LOGI << label_ << ": Time offset is initialized to " << time_offset_ << "s.";
+                            if (offset_reset_)
+                                offset_reset_ = false;
+                            if (!offset_set_)
+                                offset_set_ = true;
+
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            auto pop_size = std::min(sensor_stamp_queue_.unsafe_size(), ext_stamp_queue_.unsafe_size());
+            for (size_t i = 0; i < pop_size; i++) {
+                sensor_stamp_queue_.try_pop(stamp_bundle_sensor);
+                ext_stamp_queue_.try_pop(stamp_bundle_ext);
+
+                auto offset = stamp_bundle_sensor.stamp_trigger - stamp_bundle_ext.stamp_trigger;
+                if (std::abs(offset - time_offset_) < 1e-5) {
+                    time_offset_ = 0.8 * time_offset_ + 0.2 * offset;
+                } else {
+                    LOGW << label_ << ": Time offset is not stable!" << time_offset_ << " " << offset;
+                    // 可能存在丢数据的情况，需要重新对齐
+                    offset_reset_ = true;
                 }
             }
         }
     }
 }
-
 
 } // namespace MSC
