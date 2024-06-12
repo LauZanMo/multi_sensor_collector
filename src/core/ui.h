@@ -6,8 +6,6 @@
 #include <tbb/concurrent_queue.h>
 #include <yaml-cpp/yaml.h>
 
-struct _win_st;
-
 namespace MSC {
 
 class Synchronizer;
@@ -43,11 +41,9 @@ public:
     }
 
 private:
-    _win_st *createWindow(const std::string &name, double start_x, double start_y, double width, double height);
     void parse(const std::string &cmd);
 
     SynchronizerPtr synchronizer_;
-    _win_st *log_win_, *input_win_, *viz_win_;
 
     // 容器
     tbb::concurrent_queue<std::string> log_queue_, viz_queue_, level_queue_;

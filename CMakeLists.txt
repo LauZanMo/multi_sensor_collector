@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(multi_sensor_collector)
 
 # 选项
-option(BUILD_UTILS "Build utils." ON)
+option(BUILD_UTILS "Build utils." OFF)
 
 # 编译和输出配置
 set(CMAKE_CXX_STANDARD 17)
@@ -73,10 +73,6 @@ target_link_libraries(multi_sensor_collector TBB::tbb)
 # serial
 add_subdirectory(${PROJECT_SOURCE_DIR}/thirdparty/serial)
 target_link_libraries(multi_sensor_collector serial)
-
-# ncursesw
-find_package(Curses REQUIRED)
-target_link_libraries(multi_sensor_collector ${CURSES_LIBRARIES})
 
 # OpenCV
 set(OpenCV_DIR /usr/lib/x86_64-linux-gnu/cmake/opencv4/)
