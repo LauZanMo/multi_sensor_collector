@@ -31,9 +31,9 @@ sudo ldconfig
 如果需要将hdf5转为rosbag，还需要安装额外的依赖：
 
 - [ROS](https://ros.org/)
-- [dvs_msgs](https://github.com/uzh-rpg/rpg_dvs_ros)
+- dvs_msgs
 
-其中，dvs_msgs是rpg_dvs_ros下的一个子包，单独拷贝出来进行编译即可。
+其中，dvs_msgs是[rpg_dvs_ros](https://github.com/uzh-rpg/rpg_dvs_ros)下的一个子包，单独拷贝出来进行编译即可，编译完后记得source环境变量。
 
 ## 编译
 
@@ -103,4 +103,14 @@ bag_writer:
             topic: "/dvs/events" # 写入rosbag中的话题
             type: "event" # 写入信息的类型
             params: ["1280", "720", "100.0"] # 参数，分别为分辨率宽、高和该信息发布的频率
+```
+
+plot_dynamic.py为动态绘制脚本，请使用pip安装相关源后，修改以下配置后进行预览：
+
+``` python
+datasets_path = "/home/ubuntu/dataset/whu/20240410" # 数据集路径
+prefix = "walk_fast0" # legend前缀
+dataset_names = ["walk_fast01", "walk_fast02", "walk_fast03"] # 数据集名
+fig_name = "walk_fast01-03_imu_mag" # 预览图像名
+output_path = "/home/ubuntu/视频/evins实验" # 预览图像保存路径
 ```
